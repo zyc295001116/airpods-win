@@ -6,6 +6,9 @@ namespace AirPodsWinTray.Core.Configuration;
 public sealed class AppConfig
 {
     public string? BoundContainerName { get; set; }
+    public Guid? BoundContainerId { get; set; }
+    public List<string> BoundEndpointIds { get; set; } = [];
+    public List<string> BoundKsDeviceIds { get; set; } = [];
     public bool StartWithWindows { get; set; } = true;
     public bool ShowCaseOpenPopup { get; set; } = true;
     public bool PauseOnEarRemoval { get; set; } = true;

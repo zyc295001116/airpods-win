@@ -55,6 +55,12 @@ public sealed class AudioPolicyHostedService : IDisposable
         };
 
         var decision = _engine.Evaluate(settings, connected);
+        if (manualRelease || decision.ShouldConnect || decision.ShouldDisconnect)
+        {
+            // #region agent log
+            AgentDebugLog.Write("A", "AudioPolicyHostedService.Tick", "policy action", new { manualRelease, connected, found = device != null, connect = decision.ShouldConnect, disconnect = decision.ShouldDisconnect, reason = decision.Reason.ToString() });
+            // #endregion
+        }
         if (decision.ShouldConnect)
         {
             _btAudio.ConnectByName(_deviceName);

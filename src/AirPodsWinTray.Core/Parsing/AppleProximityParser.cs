@@ -52,8 +52,8 @@ public static class AppleProximityParser
         var chargeR = (chargeNibble & (flip ? 0b01 : 0b10)) != 0;
         var chargeCase = (chargeNibble & 0b100) != 0;
 
-        var inEarL = (inEarNibble & (flip ? 0b1000 : 0b10)) != 0;
-        var inEarR = (inEarNibble & (flip ? 0b10 : 0b1000)) != 0;
+        var inEarL = (inEarNibble & 0b10) != 0;
+        var inEarR = (inEarNibble & 0b1000) != 0;
 
         if (mono)
         {
@@ -104,7 +104,7 @@ public static class AppleProximityParser
         }
 
         var flipNibble = HexNibble(status, 10);
-        return (flipNibble & 0b10) != 0;
+        return (flipNibble & 0b10) == 0;
     }
 
     private static int HexNibble(string status, int index)

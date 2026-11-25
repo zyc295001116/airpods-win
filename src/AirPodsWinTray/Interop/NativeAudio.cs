@@ -36,7 +36,7 @@ internal static class PropertyKeys
 
     public static readonly PropertyKey PKEY_Device_ContainerId = new()
     {
-        FmtId = new Guid("8c7ed206-3f8a-4826-b3b4-f0bca5f89e47"),
+        FmtId = new Guid("8c7ed206-3f8a-4827-b3ab-ae9e1faefc6c"),
         Pid = 2
     };
 }
@@ -49,6 +49,7 @@ internal struct PropVariant
     public ushort wReserved2;
     public ushort wReserved3;
     public IntPtr pointer;
+    public IntPtr pointer2;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -61,7 +62,7 @@ internal struct KsProperty
 
 internal static class KsBtAudio
 {
-    public static readonly Guid PropertySet = new("C2F568A2-8BEA-4120-9F78-43881FC10D13");
+    public static readonly Guid PropertySet = new("7FA06C40-B8F6-4C7E-8556-E8C33A12E54D");
     public const uint OneshotReconnect = 0;
     public const uint OneshotDisconnect = 1;
     public const uint KsPropertyTypeGet = 1;
@@ -72,11 +73,11 @@ internal static class KsBtAudio
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IPropertyStore
 {
-    int GetCount(out uint count);
-    int GetAt(uint iProp, out PropertyKey pkey);
-    int GetValue(ref PropertyKey key, out PropVariant pv);
-    int SetValue(ref PropertyKey key, ref PropVariant pv);
-    int Commit();
+    [PreserveSig] int GetCount(out uint count);
+    [PreserveSig] int GetAt(uint iProp, out PropertyKey pkey);
+    [PreserveSig] int GetValue(ref PropertyKey key, out PropVariant pv);
+    [PreserveSig] int SetValue(ref PropertyKey key, ref PropVariant pv);
+    [PreserveSig] int Commit();
 }
 
 [ComImport]
@@ -84,18 +85,18 @@ internal interface IPropertyStore
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDeviceEnumerator
 {
-    int EnumAudioEndpoints(DataFlow dataFlow, DeviceState stateMask, out IMMDeviceCollection devices);
-    int GetDefaultAudioEndpoint(DataFlow dataFlow, uint role, out IMMDevice device);
-    int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
+    [PreserveSig] int EnumAudioEndpoints(DataFlow dataFlow, DeviceState stateMask, out IMMDeviceCollection devices);
+    [PreserveSig] int GetDefaultAudioEndpoint(DataFlow dataFlow, uint role, out IMMDevice device);
+    [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
 }
 
 [ComImport]
-[Guid("0BD7A1BE-652A-4D11-A7BD-37CF2F714EB6")]
+[Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E")]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDeviceCollection
 {
-    int GetCount(out uint count);
-    int Item(uint index, out IMMDevice device);
+    [PreserveSig] int GetCount(out uint count);
+    [PreserveSig] int Item(uint index, out IMMDevice device);
 }
 
 [ComImport]
@@ -103,62 +104,59 @@ internal interface IMMDeviceCollection
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDevice
 {
-    int Activate(ref Guid iid, uint clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object interfacePointer);
-    int OpenPropertyStore(uint stgmAccess, out IPropertyStore properties);
-    int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
-    int GetState(out DeviceState state);
+    [PreserveSig] int Activate(ref Guid iid, uint clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object interfacePointer);
+    [PreserveSig] int OpenPropertyStore(uint stgmAccess, out IPropertyStore properties);
+    [PreserveSig] int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+    [PreserveSig] int GetState(out DeviceState state);
 }
 
 [ComImport]
-[Guid("62BEA501-4008-4E56-82F8-6093C5FFC668")]
+[Guid("2A07407E-6497-4A18-9787-32F79BD0D98F")]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IDeviceTopology
 {
-    int GetConnectorCount(out uint count);
-    int GetConnector(uint index, out IConnector connector);
-    int GetSubunitCount(out uint count);
-    int GetSubunit(uint index, out IPart part);
-    int GetPartById(uint id, out IPart part);
-    int GetDeviceId([MarshalAs(UnmanagedType.LPWStr)] out string id);
-    int GetSignalPathCount(out uint count);
-    int GetSignalPath(uint index, out uint signalPath);
+    [PreserveSig] int GetConnectorCount(out uint count);
+    [PreserveSig] int GetConnector(uint index, out IConnector connector);
+    [PreserveSig] int GetSubunitCount(out uint count);
+    [PreserveSig] int GetSubunit(uint index, out IntPtr subunit);
+    [PreserveSig] int GetPartById(uint id, out IPart part);
+    [PreserveSig] int GetDeviceId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+    [PreserveSig] int GetSignalPath(IPart from, IPart to, [MarshalAs(UnmanagedType.Bool)] bool rejectMixedPaths, out IntPtr parts);
 }
 
 [ComImport]
-[Guid("9C87313D-CF22-4430-B448-97C72218866A")]
+[Guid("9C2C4058-23F5-41DE-877A-DF3AF236A09E")]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IConnector
 {
-    int GetType(out int type);
-    int GetDataFlow(out DataFlow flow);
-    int ConnectTo(IConnector connectTo);
-    int Disconnect();
-    int IsConnected(out int connected);
-    int GetConnectedTo(out IConnector connectedTo);
-    int GetConnectorIdConnectedTo(out uint id);
-    int GetDeviceIdConnectedTo([MarshalAs(UnmanagedType.LPWStr)] out string id);
+    [PreserveSig] int GetType(out int type);
+    [PreserveSig] int GetDataFlow(out DataFlow flow);
+    [PreserveSig] int ConnectTo(IConnector connectTo);
+    [PreserveSig] int Disconnect();
+    [PreserveSig] int IsConnected(out int connected);
+    [PreserveSig] int GetConnectedTo(out IConnector connectedTo);
+    [PreserveSig] int GetConnectorIdConnectedTo([MarshalAs(UnmanagedType.LPWStr)] out string id);
+    [PreserveSig] int GetDeviceIdConnectedTo([MarshalAs(UnmanagedType.LPWStr)] out string id);
 }
 
 [ComImport]
-[Guid("AE2DE0E4-5BCA-4F2D-AA46-5D13F8FDBBDA")]
+[Guid("AE2DE0E4-5BCA-4F2D-AA46-5D13F8FDB3A9")]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IPart
 {
-    int GetName([MarshalAs(UnmanagedType.LPWStr)] out string name);
-    int GetLocalId(out uint id);
-    int GetGlobalId([MarshalAs(UnmanagedType.LPWStr)] out string id);
-    int GetPartType(out int type);
-    int GetSubType(out Guid subType);
-    int GetControlInterfaceCount(out uint count);
-    int GetControlInterface(uint index, out IntPtr control);
-    int RegisterControlChangeCallback(ref Guid eventId, IntPtr callback);
-    int UnregisterControlChangeCallback(IntPtr callback);
-    int GetPartById(uint id, out IPart part);
-    int GetControlChangeRegister(out int register);
-    int GetInterfaceByName([MarshalAs(UnmanagedType.LPWStr)] string name, out IntPtr interfacePointer);
-    int GetTopologyObject(out IDeviceTopology topology);
-    int Activate(uint clsCtx, ref Guid iid, out IntPtr interfacePointer);
-    int RegisterControlChangeCallback2(uint flags, IntPtr context);
+    [PreserveSig] int GetName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+    [PreserveSig] int GetLocalId(out uint id);
+    [PreserveSig] int GetGlobalId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+    [PreserveSig] int GetPartType(out int type);
+    [PreserveSig] int GetSubType(out Guid subType);
+    [PreserveSig] int GetControlInterfaceCount(out uint count);
+    [PreserveSig] int GetControlInterface(uint index, out IntPtr control);
+    [PreserveSig] int EnumPartsIncoming(out IntPtr parts);
+    [PreserveSig] int EnumPartsOutgoing(out IntPtr parts);
+    [PreserveSig] int GetTopologyObject(out IDeviceTopology topology);
+    [PreserveSig] int Activate(uint clsCtx, ref Guid iid, out IntPtr interfacePointer);
+    [PreserveSig] int RegisterControlChangeCallback(ref Guid iid, IntPtr notify);
+    [PreserveSig] int UnregisterControlChangeCallback(IntPtr notify);
 }
 
 [ComImport]
@@ -166,6 +164,7 @@ internal interface IPart
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IKsControl
 {
+    [PreserveSig]
     int KsProperty([In] ref KsProperty property, [In] uint propertyLength,
         IntPtr propertyData, [In] uint dataLength, out uint bytesReturned);
 }

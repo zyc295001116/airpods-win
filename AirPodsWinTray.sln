@@ -1,5 +1,4 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -10,6 +9,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0F35F4BC-13B8-462B-990B-64F65F143FC6}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AirPodsWinTray.Tests", "tests\AirPodsWinTray.Tests\AirPodsWinTray.Tests.csproj", "{D97B1E90-0828-408B-A9D5-D6D16FC8DA2E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AirPodsWinTray.Core", "src\AirPodsWinTray.Core\AirPodsWinTray.Core.csproj", "{95767969-FA0B-4D6F-980B-950E41AF915D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -28,9 +29,14 @@ Global
 		{D97B1E90-0828-408B-A9D5-D6D16FC8DA2E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D97B1E90-0828-408B-A9D5-D6D16FC8DA2E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D97B1E90-0828-408B-A9D5-D6D16FC8DA2E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{95767969-FA0B-4D6F-980B-950E41AF915D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{95767969-FA0B-4D6F-980B-950E41AF915D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{95767969-FA0B-4D6F-980B-950E41AF915D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{95767969-FA0B-4D6F-980B-950E41AF915D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{D91ECB32-7D74-4711-9118-D3CB1D137A51} = {B450657C-1265-43D4-8E8D-624129318DAA}
 		{D97B1E90-0828-408B-A9D5-D6D16FC8DA2E} = {0F35F4BC-13B8-462B-990B-64F65F143FC6}
+		{95767969-FA0B-4D6F-980B-950E41AF915D} = {B450657C-1265-43D4-8E8D-624129318DAA}
 	EndGlobalSection
 EndGlobal

@@ -1,57 +1,156 @@
 using System.Runtime.InteropServices;
 using AirPodsWinTray.Interop;
-using Windows.Devices.Enumeration;
 
 namespace AirPodsWinTray.Services;
 
 /// <summary>
 /// Connect/disconnect Bluetooth audio via KSPROPERTY_ONESHOT (ToothTray approach).
+/// KS filter ids are remembered so reconnect still works after the endpoint unplugs.
 /// </summary>
 public sealed class BtAudioService
 {
-    private readonly Dictionary<Guid, ConnectorGroup> _groups = new();
+    private const uint ClsCtxAll = 23;
+
+    private readonly object _gate = new();
+    private readonly Dictionary<Guid, KnownGroup> _known = new();
+
+    public void Seed(Guid containerId, string name, IEnumerable<string> endpointIds, IEnumerable<string> ksDeviceIds)
+    {
+        lock (_gate)
+        {
+            if (_known.ContainsKey(containerId))
+            {
+                return;
+            }
+
+            var group = new KnownGroup(containerId, name);
+            group.EndpointIds.AddRange(endpointIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct());
+            group.KsDeviceIds.AddRange(ksDeviceIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct());
+            _known[containerId] = group;
+        }
+    }
 
     public IReadOnlyList<BtAudioDevice> ListDevices()
     {
-        _groups.Clear();
-        EnumerateIntoGroups();
+        lock (_gate)
+        {
+            DiscoverUnlocked();
+            return SnapshotUnlocked();
+        }
+    }
 
-        return _groups.Values
-            .Select(g => new BtAudioDevice
+    public void Discover()
+    {
+        lock (_gate)
+        {
+            DiscoverUnlocked();
+        }
+    }
+
+    public bool? DefaultPlaybackIsKnown(string nameContains)
+    {
+        lock (_gate)
+        {
+            if (!TryFindUnlocked(nameContains, out var group) || group.EndpointIds.Count == 0)
             {
-                ContainerName = g.ContainerName,
-                ContainerId = g.ContainerId,
-                IsConnected = g.IsConnected
-            })
-            .OrderBy(d => d.ContainerName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+                return null;
+            }
+
+            var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+            if (!TryGetDefaultPlayback(enumerator, out var device) || device.GetId(out var id) < 0)
+            {
+                return null;
+            }
+
+            return group.EndpointIds.Contains(id);
+        }
     }
 
     public BtAudioDevice? FindByName(string nameContains)
     {
-        return ListDevices()
-            .FirstOrDefault(d => d.ContainerName.Contains(nameContains, StringComparison.OrdinalIgnoreCase));
+        lock (_gate)
+        {
+            if (!TryFindUnlocked(nameContains, out var group))
+            {
+                return null;
+            }
+
+            RefreshGroupStateUnlocked(group);
+            return ToDevice(group);
+        }
     }
 
     public bool Connect(Guid containerId) => SendProperty(containerId, KsBtAudio.OneshotReconnect);
 
     public bool Disconnect(Guid containerId) => SendProperty(containerId, KsBtAudio.OneshotDisconnect);
 
-    public bool ConnectByName(string nameContains)
-    {
-        var device = FindByName(nameContains);
-        return device != null && Connect(device.ContainerId);
-    }
+    public bool ConnectByName(string nameContains) =>
+        SendByName(nameContains, KsBtAudio.OneshotReconnect);
 
-    public bool DisconnectByName(string nameContains)
+    public bool DisconnectByName(string nameContains) =>
+        SendByName(nameContains, KsBtAudio.OneshotDisconnect);
+
+    private bool SendByName(string nameContains, uint propertyId)
     {
-        var device = FindByName(nameContains);
-        return device != null && Disconnect(device.ContainerId);
+        var started = Environment.TickCount64;
+        lock (_gate)
+        {
+            var foundBeforeDiscover = TryFindUnlocked(nameContains, out var group);
+            if (!foundBeforeDiscover)
+            {
+                DiscoverUnlocked();
+                foundBeforeDiscover = TryFindUnlocked(nameContains, out group);
+            }
+
+            var sent = foundBeforeDiscover && SendUnlocked(group, propertyId);
+            if (!sent)
+            {
+                DiscoverUnlocked();
+                sent = TryFindUnlocked(nameContains, out group) && SendUnlocked(group, propertyId);
+            }
+
+            // #region agent log
+            AgentDebugLog.Write("B", "BtAudioService.SendByName", "send finished", new
+            {
+                propertyId,
+                found = foundBeforeDiscover,
+                sent,
+                ms = Environment.TickCount64 - started,
+                known = _known.Count,
+                ks = group?.KsDeviceIds.Count ?? 0,
+                connected = group?.IsConnected ?? false
+            });
+            // #endregion
+            return sent;
+        }
     }
 
     private bool SendProperty(Guid containerId, uint propertyId)
     {
-        if (!_groups.TryGetValue(containerId, out var group) && !TryLoadGroup(containerId, out group))
+        lock (_gate)
+        {
+            if (!_known.TryGetValue(containerId, out var group))
+            {
+                DiscoverUnlocked();
+                if (!_known.TryGetValue(containerId, out group))
+                {
+                    return false;
+                }
+            }
+
+            if (SendUnlocked(group, propertyId))
+            {
+                return true;
+            }
+
+            DiscoverUnlocked();
+            return _known.TryGetValue(containerId, out group) && SendUnlocked(group, propertyId);
+        }
+    }
+
+    private bool SendUnlocked(KnownGroup group, uint propertyId)
+    {
+        if (group.KsDeviceIds.Count == 0)
         {
             return false;
         }
@@ -62,33 +161,69 @@ public sealed class BtAudioService
             Id = propertyId,
             Flags = KsBtAudio.KsPropertyTypeGet
         };
-
-        var ok = true;
-        foreach (var ks in group.KsControls)
+        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+        var any = false;
+        var steps = new List<string>(group.KsDeviceIds.Count);
+        foreach (var ksId in group.KsDeviceIds)
         {
-            var hr = ks.KsProperty(ref ksProperty, (uint)Marshal.SizeOf<KsProperty>(), IntPtr.Zero, 0, out _);
-            if (hr < 0)
+            if (!TryGetDevice(enumerator, ksId, out var device, out var getHr))
             {
-                ok = false;
+                steps.Add($"get:{getHr}");
+                continue;
+            }
+
+            var iidKs = typeof(IKsControl).GUID;
+            var actHr = device.Activate(ref iidKs, ClsCtxAll, IntPtr.Zero, out var ksObj);
+            if (actHr < 0 || ksObj is not IKsControl ks)
+            {
+                steps.Add($"act:{actHr}");
+                continue;
+            }
+
+            var ksHr = ks.KsProperty(ref ksProperty, (uint)Marshal.SizeOf<KsProperty>(), IntPtr.Zero, 0, out _);
+            steps.Add($"ks:{ksHr}");
+            if (ksHr >= 0)
+            {
+                any = true;
             }
         }
 
-        return ok && group.KsControls.Count > 0;
+        // #region agent log
+        AgentDebugLog.Write("D", "BtAudioService.SendUnlocked", "ks property results", new { propertyId, any, steps });
+        // #endregion
+        return any;
     }
 
-    private void EnumerateIntoGroups()
+    private void DiscoverUnlocked()
     {
-        var containers = EnumerateContainers();
         var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
-        enumerator.EnumAudioEndpoints(DataFlow.All, DeviceState.Active | DeviceState.Unplugged, out var collection);
-        collection.GetCount(out var count);
+        var hr = enumerator.EnumAudioEndpoints(DataFlow.All, DeviceState.Active | DeviceState.Unplugged, out var collection);
+        uint count = 0;
+        var countHr = collection?.GetCount(out count) ?? -1;
+        if (hr < 0 || collection is null || countHr < 0)
+        {
+            // #region agent log
+            AgentDebugLog.Write("B", "BtAudioService.DiscoverUnlocked", "enum endpoints failed", new { hr, countHr });
+            // #endregion
+            return;
+        }
+
+        var seen = new HashSet<Guid>();
+        var active = new Dictionary<Guid, bool>();
+        var ksHits = 0;
 
         for (uint i = 0; i < count; i++)
         {
-            collection.Item(i, out var device);
-            device.GetState(out var state);
+            if (!TryItem(collection, i, out var device) || device.GetState(out var state) < 0)
+            {
+                continue;
+            }
 
-            device.OpenPropertyStore(0, out var propertyStore);
+            if (device.OpenPropertyStore(0, out var propertyStore) < 0 || propertyStore is null)
+            {
+                continue;
+            }
+
             var name = GetStringProperty(propertyStore, PropertyKeys.PKEY_Device_FriendlyName);
             var containerId = GetGuidProperty(propertyStore, PropertyKeys.PKEY_Device_ContainerId);
             if (containerId == Guid.Empty)
@@ -96,84 +231,258 @@ public sealed class BtAudioService
                 continue;
             }
 
-            if (!TryGetKsControl(device, out var ksControl))
+            var foundKs = TryGetKsControl(device, out var ksDeviceId);
+            if (foundKs)
+            {
+                ksHits++;
+            }
+            if (!_known.TryGetValue(containerId, out var group))
+            {
+                if (!foundKs)
+                {
+                    continue;
+                }
+
+                group = new KnownGroup(containerId, PreferName(name));
+                _known[containerId] = group;
+            }
+            else if (IsGenericName(group.Name) && !string.IsNullOrWhiteSpace(name))
+            {
+                group.Name = name;
+            }
+            else if (IsPreferredName(name) && !IsPreferredName(group.Name))
+            {
+                group.Name = name;
+            }
+
+            seen.Add(containerId);
+            active[containerId] = active.GetValueOrDefault(containerId) || state == DeviceState.Active;
+
+            if (device.GetId(out var endpointId) >= 0 && !string.IsNullOrWhiteSpace(endpointId) && !group.EndpointIds.Contains(endpointId))
+            {
+                group.EndpointIds.Add(endpointId);
+            }
+
+            if (foundKs && !group.KsDeviceIds.Contains(ksDeviceId))
+            {
+                group.KsDeviceIds.Add(ksDeviceId);
+            }
+        }
+
+        foreach (var (id, isActive) in active)
+        {
+            _known[id].IsConnected = isActive;
+        }
+
+        foreach (var (id, group) in _known)
+        {
+            if (!seen.Contains(id))
+            {
+                RefreshGroupStateUnlocked(group);
+            }
+        }
+
+        // #region agent log
+        AgentDebugLog.Write("B", "BtAudioService.DiscoverUnlocked", "discover finished", new
+        {
+            endpoints = count,
+            ksHits,
+            known = _known.Count,
+            withKs = _known.Values.Count(g => g.KsDeviceIds.Count > 0),
+            active = _known.Values.Count(g => g.IsConnected)
+        });
+        // #endregion
+    }
+
+    private void RefreshGroupStateUnlocked(KnownGroup group)
+    {
+        if (group.EndpointIds.Count == 0)
+        {
+            return;
+        }
+
+        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+        var saw = false;
+        var anyActive = false;
+        foreach (var endpointId in group.EndpointIds)
+        {
+            if (!TryGetDevice(enumerator, endpointId, out var device, out _))
             {
                 continue;
             }
 
-            if (!_groups.TryGetValue(containerId, out var group))
+            saw = true;
+            if (device.GetState(out var state) >= 0 && state == DeviceState.Active)
             {
-                var containerName = containers.TryGetValue(containerId, out var cname) ? cname : name;
-                group = new ConnectorGroup(containerId, containerName);
-                _groups[containerId] = group;
+                anyActive = true;
             }
+        }
 
-            group.KsControls.Add(ksControl);
-            if (state == DeviceState.Active)
-            {
-                group.IsConnected = true;
-            }
+        if (saw)
+        {
+            group.IsConnected = anyActive;
         }
     }
 
-    private bool TryLoadGroup(Guid containerId, out ConnectorGroup group)
+    private bool TryFindUnlocked(string nameContains, out KnownGroup group)
     {
-        EnumerateIntoGroups();
-        return _groups.TryGetValue(containerId, out group!);
-    }
-
-    private static bool TryGetKsControl(IMMDevice endpointDevice, out IKsControl ksControl)
-    {
-        ksControl = null!;
-        var iidTopology = typeof(IDeviceTopology).GUID;
-        endpointDevice.Activate(ref iidTopology, 1, IntPtr.Zero, out var topologyObj);
-        var topology = (IDeviceTopology)topologyObj;
-        topology.GetConnectorCount(out var connectorCount);
-
-        var iidEnumerator = typeof(IMMDeviceEnumerator).GUID;
-        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
-
-        for (uint i = 0; i < connectorCount; i++)
+        group = null!;
+        foreach (var candidate in _known.Values)
         {
-            topology.GetConnector(i, out var connector);
-            connector.GetConnectedTo(out var otherConnector);
-            if (otherConnector == null)
+            if (candidate.Name.Contains(nameContains, StringComparison.OrdinalIgnoreCase)
+                || nameContains.Contains(candidate.Name, StringComparison.OrdinalIgnoreCase))
             {
-                continue;
+                group = candidate;
+                return true;
             }
-
-            var part = (IPart)otherConnector;
-            part.GetTopologyObject(out var otherTopology);
-            otherTopology.GetDeviceId(out var otherDeviceId);
-            if (otherDeviceId is null || !(otherDeviceId.Contains("bth", StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            enumerator.GetDevice(otherDeviceId, out var otherDevice);
-            var iidKs = typeof(IKsControl).GUID;
-            otherDevice.Activate(ref iidKs, 1, IntPtr.Zero, out var ksObj);
-            ksControl = (IKsControl)ksObj;
-            return true;
         }
 
         return false;
     }
 
-    private static Dictionary<Guid, string> EnumerateContainers()
+    private List<BtAudioDevice> SnapshotUnlocked() =>
+        _known.Values
+            .Select(ToDevice)
+            .OrderBy(d => d.ContainerName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static BtAudioDevice ToDevice(KnownGroup group) => new()
     {
-        var map = new Dictionary<Guid, string>();
-        var containers = DeviceInformation.FindAllAsync(string.Empty, null, DeviceInformationKind.DeviceContainer)
-            .AsTask().GetAwaiter().GetResult();
-        foreach (var info in containers)
+        ContainerName = group.Name,
+        ContainerId = group.ContainerId,
+        IsConnected = group.IsConnected,
+        EndpointIds = group.EndpointIds.ToArray(),
+        KsDeviceIds = group.KsDeviceIds.ToArray()
+    };
+
+    private static bool TryGetDevice(IMMDeviceEnumerator enumerator, string id, out IMMDevice device, out int hr)
+    {
+        try
         {
-            if (Guid.TryParse(info.Id, out var id))
+            hr = enumerator.GetDevice(id, out device!);
+            if (hr < 0 || device is null)
             {
-                map[id] = info.Name;
+                device = null!;
+                return false;
             }
+
+            return true;
+        }
+        catch (InvalidCastException)
+        {
+            device = null!;
+            hr = unchecked((int)0x80004002);
+            return false;
+        }
+    }
+
+    private static bool TryGetDefaultPlayback(IMMDeviceEnumerator enumerator, out IMMDevice device)
+    {
+        try
+        {
+            if (enumerator.GetDefaultAudioEndpoint(DataFlow.Render, 1, out device!) < 0 || device is null)
+            {
+                device = null!;
+                return false;
+            }
+
+            return true;
+        }
+        catch (InvalidCastException)
+        {
+            device = null!;
+            return false;
+        }
+    }
+
+    private static bool TryItem(IMMDeviceCollection collection, uint index, out IMMDevice device)
+    {
+        try
+        {
+            if (collection.Item(index, out device!) < 0 || device is null)
+            {
+                device = null!;
+                return false;
+            }
+
+            return true;
+        }
+        catch (InvalidCastException)
+        {
+            device = null!;
+            return false;
+        }
+    }
+
+    private static string PreferName(string name) => string.IsNullOrWhiteSpace(name) ? "AirPods" : name;
+
+    private static bool IsGenericName(string name) =>
+        string.IsNullOrWhiteSpace(name) || name.Equals("AirPods", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPreferredName(string name) =>
+        !name.Contains("Hands-Free", StringComparison.OrdinalIgnoreCase)
+        && !name.Contains("Headset", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryGetKsControl(IMMDevice endpointDevice, out string ksDeviceId)
+    {
+        ksDeviceId = "";
+        var iidTopology = typeof(IDeviceTopology).GUID;
+        var hr = endpointDevice.Activate(ref iidTopology, ClsCtxAll, IntPtr.Zero, out var topologyObj);
+        if (hr < 0 || topologyObj is not IDeviceTopology topology)
+        {
+            return false;
         }
 
-        return map;
+        hr = topology.GetConnectorCount(out var connectorCount);
+        if (hr < 0)
+        {
+            return false;
+        }
+
+        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+
+        for (uint i = 0; i < connectorCount; i++)
+        {
+            hr = topology.GetConnector(i, out var connector);
+            if (hr < 0 || connector is null)
+            {
+                continue;
+            }
+
+            hr = connector.GetConnectedTo(out var otherConnector);
+            if (hr < 0 || otherConnector is not IPart part)
+            {
+                continue;
+            }
+
+            hr = part.GetTopologyObject(out var otherTopology);
+            if (hr < 0 || otherTopology is null)
+            {
+                continue;
+            }
+
+            hr = otherTopology.GetDeviceId(out var otherDeviceId);
+            if (hr < 0 || otherDeviceId is null || !otherDeviceId.Contains("bth", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!TryGetDevice(enumerator, otherDeviceId, out var otherDevice, out _))
+            {
+                continue;
+            }
+
+            var iidKs = typeof(IKsControl).GUID;
+            if (otherDevice.Activate(ref iidKs, ClsCtxAll, IntPtr.Zero, out var ksObj) < 0 || ksObj is not IKsControl)
+            {
+                continue;
+            }
+
+            ksDeviceId = otherDeviceId;
+            return true;
+        }
+
+        return false;
     }
 
     private static string GetStringProperty(IPropertyStore store, PropertyKey key)
@@ -217,11 +526,12 @@ public sealed class BtAudioService
     [DllImport("ole32.dll")]
     private static extern int PropVariantClear(ref PropVariant pvar);
 
-    private sealed class ConnectorGroup(Guid containerId, string containerName)
+    private sealed class KnownGroup(Guid containerId, string name)
     {
         public Guid ContainerId { get; } = containerId;
-        public string ContainerName { get; } = containerName;
-        public List<IKsControl> KsControls { get; } = [];
+        public string Name { get; set; } = name;
+        public List<string> EndpointIds { get; } = [];
+        public List<string> KsDeviceIds { get; } = [];
         public bool IsConnected { get; set; }
     }
 }
