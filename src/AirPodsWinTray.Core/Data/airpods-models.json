@@ -1,0 +1,22 @@
+{
+  "models": [
+    { "code": "0x0220", "name": "AirPods", "formFactor": "Stereo", "capabilityTier": "A", "supportsAnc": false, "earDetectReliability": "Normal" },
+    { "code": "0x0F20", "name": "AirPods (2nd generation)", "formFactor": "Stereo", "capabilityTier": "A", "supportsAnc": false, "earDetectReliability": "Normal" },
+    { "code": "0x1320", "name": "AirPods (3rd generation)", "formFactor": "Stereo", "capabilityTier": "A", "supportsAnc": false, "earDetectReliability": "Normal" },
+    { "code": "0x1920", "name": "AirPods (4th generation)", "formFactor": "Stereo", "capabilityTier": "A", "supportsAnc": false, "earDetectReliability": "Normal" },
+    { "code": "0x1B20", "name": "AirPods 4 (ANC)", "formFactor": "Stereo", "capabilityTier": "B", "supportsAnc": true, "earDetectReliability": "Normal" },
+    { "code": "0x0E20", "name": "AirPods Pro", "formFactor": "Stereo", "capabilityTier": "B", "supportsAnc": true, "earDetectReliability": "Normal" },
+    { "code": "0x1420", "name": "AirPods Pro 2", "formFactor": "Stereo", "capabilityTier": "B", "supportsAnc": true, "earDetectReliability": "Degraded" },
+    { "code": "0x2420", "name": "AirPods Pro 2 (USB-C)", "formFactor": "Stereo", "capabilityTier": "B", "supportsAnc": true, "earDetectReliability": "Degraded" },
+    { "code": "0x2720", "name": "AirPods Pro 3", "formFactor": "Stereo", "capabilityTier": "B", "supportsAnc": true, "earDetectReliability": "Degraded" },
+    { "code": "0x0A20", "name": "AirPods Max", "formFactor": "Mono", "capabilityTier": "A_mono", "supportsAnc": true, "earDetectReliability": "Normal" },
+    { "code": "0x1F20", "name": "AirPods Max (USB-C)", "formFactor": "Mono", "capabilityTier": "A_mono", "supportsAnc": true, "earDetectReliability": "Normal" }
+  ],
+  "unknownDefaults": {
+    "name": "Unknown AirPods",
+    "formFactor": "Stereo",
+    "capabilityTier": "A",
+    "supportsAnc": false,
+    "earDetectReliability": "Normal"
+  }
+}

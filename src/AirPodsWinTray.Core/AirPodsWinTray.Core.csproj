@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AirPodsWinTray.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Data\airpods-models.json">
+      <LogicalName>AirPodsWinTray.Core.Data.airpods-models.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>
