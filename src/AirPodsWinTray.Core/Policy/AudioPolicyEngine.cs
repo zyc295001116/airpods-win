@@ -34,7 +34,7 @@ public sealed class AudioPolicyEngine
 
         if (!deviceConnected)
         {
-            if (settings.AutoConnectOnMediaPlay && _mediaPlaying)
+            if (settings.AutoConnectOnMediaPlay && _mediaPlaying && !settings.SuppressAutoConnect)
             {
                 return PolicyDecision.Connect(PolicyReason.MediaPlay);
             }
@@ -67,6 +67,7 @@ public sealed class AudioPolicySettings
     public bool AutoDisconnectOnIdle { get; init; } = true;
     public int IdleDisconnectMinutes { get; init; } = 10;
     public bool ManualReleaseRequested { get; set; }
+    public bool SuppressAutoConnect { get; init; }
 }
 
 public enum PolicyReason

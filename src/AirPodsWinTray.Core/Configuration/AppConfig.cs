@@ -6,9 +6,18 @@ namespace AirPodsWinTray.Core.Configuration;
 public sealed class AppConfig
 {
     public string? BoundContainerName { get; set; }
+    public Guid? BoundContainerId { get; set; }
+    public List<string> BoundEndpointIds { get; set; } = [];
+    public List<string> BoundKsDeviceIds { get; set; } = [];
     public bool StartWithWindows { get; set; } = true;
     public bool ShowCaseOpenPopup { get; set; } = true;
     public bool PauseOnEarRemoval { get; set; } = true;
+    public bool DisconnectWhenAllOutOfEar { get; set; } = true;
+    public int? OverlayLeft { get; set; }
+    public int? OverlayTop { get; set; }
+    public bool OverlayCompact { get; set; }
+    public double OverlayOpacity { get; set; } = 1;
+    public string? OverlayDock { get; set; }
     public bool AutoConnectOnMediaPlay { get; set; } = true;
     public bool AutoDisconnectOnLock { get; set; } = true;
     public bool AutoDisconnectOnIdle { get; set; } = true;

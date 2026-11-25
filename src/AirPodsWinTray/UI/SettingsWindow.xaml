@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="AirPodsWinTray.UI.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border x:Name="RootKey" IsTabStop="True" Padding="8" BorderThickness="1" CornerRadius="8"
+            Background="{ThemeResource FallbackCardBrush}"
+            BorderBrush="{ThemeResource CardStrokeBrush}">
+        <StackPanel Spacing="4">
+            <Button Content="刷新设备" Style="{StaticResource MenuButtonStyle}" Click="OnRefresh"/>
+            <Button x:Name="SizeToggle" Content="小窗" Style="{StaticResource MenuButtonStyle}" Click="OnToggleSize"/>
+            <TextBlock Text="透明度" FontSize="12" Margin="8,8,8,0"
+                       Foreground="{ThemeResource TextSecondaryBrush}"/>
+            <Slider x:Name="OpacitySlider" Minimum="0.25" Maximum="1" StepFrequency="0.05" Margin="8,0,8,4"/>
+            <Button Content="退出" Style="{StaticResource MenuButtonStyle}" Click="OnExit"/>
+        </StackPanel>
+    </Border>
+</Window>

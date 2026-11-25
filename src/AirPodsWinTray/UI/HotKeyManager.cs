@@ -6,6 +6,7 @@ public sealed class HotKeyManager : IDisposable
 {
     private readonly Dictionary<int, Action> _bindings = new();
     private int _nextId = 0xA700;
+    private IntPtr _hwnd;
 
     public bool Register(IntPtr hwnd, string gesture, Action handler)
     {
@@ -20,18 +21,19 @@ public sealed class HotKeyManager : IDisposable
             return false;
         }
 
+        _hwnd = hwnd;
         _bindings[id] = handler;
         return true;
     }
 
-    public void ProcessMessage(ref Message m)
+    public void Handle(uint msg, IntPtr wParam)
     {
-        if (m.Msg != WM_HOTKEY)
+        if (msg != WM_HOTKEY)
         {
             return;
         }
 
-        if (_bindings.TryGetValue(m.WParam.ToInt32(), out var action))
+        if (_bindings.TryGetValue((int)wParam, out var action))
         {
             action();
         }
@@ -41,8 +43,10 @@ public sealed class HotKeyManager : IDisposable
     {
         foreach (var id in _bindings.Keys)
         {
-            UnregisterHotKey(IntPtr.Zero, id);
+            UnregisterHotKey(_hwnd, id);
         }
+
+        _bindings.Clear();
     }
 
     private static bool TryParse(string gesture, out uint modifiers, out uint key)
