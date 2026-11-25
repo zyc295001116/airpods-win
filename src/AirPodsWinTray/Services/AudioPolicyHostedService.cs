@@ -1,5 +1,6 @@
 using AirPodsWinTray.Core.Configuration;
 using AirPodsWinTray.Core.Policy;
+using Microsoft.UI.Dispatching;
 
 namespace AirPodsWinTray.Services;
 
@@ -9,22 +10,35 @@ public sealed class AudioPolicyHostedService : IDisposable
     private readonly AppConfig _config;
     private readonly BtAudioService _btAudio;
     private readonly MediaControlBridge _media;
-    private readonly System.Windows.Forms.Timer _timer;
-    private readonly string _deviceName;
+    private readonly DispatcherQueueTimer _timer;
+    private Guid? _deviceId;
+    private string _deviceName;
+    private bool _suppressAutoConnect;
 
-    public AudioPolicyHostedService(AppConfig config, BtAudioService btAudio, MediaControlBridge media)
+    public AudioPolicyHostedService(AppConfig config, BtAudioService btAudio, MediaControlBridge media, DispatcherQueue queue)
     {
         _config = config;
         _btAudio = btAudio;
         _media = media;
-        _deviceName = string.IsNullOrWhiteSpace(config.BoundContainerName) ? "AirPods" : config.BoundContainerName;
+        _deviceId = config.BoundContainerId;
+        _deviceName = config.BoundContainerName ?? "";
 
-        _timer = new System.Windows.Forms.Timer { Interval = 15_000 };
+        _timer = queue.CreateTimer();
+        _timer.Interval = TimeSpan.FromSeconds(15);
+        _timer.IsRepeating = true;
         _timer.Tick += (_, _) => Tick();
 
         Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
         _media.PlaybackChanged += playing => _engine.NotifyMediaPlayback(playing);
     }
+
+    public void SetDevice(Guid? containerId, string? name)
+    {
+        _deviceId = containerId;
+        _deviceName = name ?? "";
+    }
+
+    public void SetSuppressAutoConnect(bool suppress) => _suppressAutoConnect = suppress;
 
     public void Start()
     {
@@ -43,7 +57,7 @@ public sealed class AudioPolicyHostedService : IDisposable
 
     private void Tick(bool manualRelease = false)
     {
-        var device = _btAudio.FindByName(_deviceName);
+        var device = _deviceId is Guid id ? _btAudio.FindById(id) : _btAudio.FindByName(_deviceName);
         var connected = device?.IsConnected ?? false;
         var settings = new AudioPolicySettings
         {
@@ -51,7 +65,8 @@ public sealed class AudioPolicyHostedService : IDisposable
             AutoDisconnectOnLock = _config.AutoDisconnectOnLock,
             AutoDisconnectOnIdle = _config.AutoDisconnectOnIdle,
             IdleDisconnectMinutes = _config.IdleDisconnectMinutes,
-            ManualReleaseRequested = manualRelease
+            ManualReleaseRequested = manualRelease,
+            SuppressAutoConnect = _suppressAutoConnect
         };
 
         var decision = _engine.Evaluate(settings, connected);
@@ -63,11 +78,17 @@ public sealed class AudioPolicyHostedService : IDisposable
         }
         if (decision.ShouldConnect)
         {
-            _btAudio.ConnectByName(_deviceName);
+            if (_deviceId is Guid connectId)
+            {
+                _btAudio.Connect(connectId);
+            }
         }
         else if (decision.ShouldDisconnect)
         {
-            _btAudio.DisconnectByName(_deviceName);
+            if (_deviceId is Guid disconnectId)
+            {
+                _btAudio.Disconnect(disconnectId);
+            }
         }
 
         if (_media.IsAnySessionPlaying())
@@ -80,6 +101,5 @@ public sealed class AudioPolicyHostedService : IDisposable
     {
         _timer.Stop();
         Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
-        _timer.Dispose();
     }
 }

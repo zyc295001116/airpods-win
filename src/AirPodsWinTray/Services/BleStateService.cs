@@ -1,7 +1,9 @@
 using AirPodsWinTray.Core.Models;
 using AirPodsWinTray.Core.Parsing;
 using AirPodsWinTray.Core.Registry;
+using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.Advertisement;
+using Windows.Devices.Radios;
 
 namespace AirPodsWinTray.Services;
 
@@ -28,15 +30,44 @@ public sealed class BleStateService : IDisposable
             ScanningMode = BluetoothLEScanningMode.Active
         };
         _watcher.Received += OnAdvertisementReceived;
+        _watcher.Stopped += (_, _) => Fault = "蓝牙未开";
     }
 
     public ProximityBeaconState? LastState => _lastState;
     public AirPodsModelDefinition? LastModel => _lastDefinition;
+    public string? Fault { get; private set; }
 
     public void SetBoundHint(string? containerName) => _boundName = containerName ?? "";
 
-    public void Start() => _watcher.Start();
+    public void Start()
+    {
+        try
+        {
+            _watcher.Start();
+            Fault = null;
+        }
+        catch
+        {
+            Fault = "蓝牙未开";
+        }
+
+        _ = RefreshFaultAsync();
+    }
     public void Stop() => _watcher.Stop();
+
+    private async Task RefreshFaultAsync()
+    {
+        try
+        {
+            var adapter = await BluetoothAdapter.GetDefaultAsync();
+            var radio = adapter == null ? null : await adapter.GetRadioAsync();
+            Fault = radio?.State == RadioState.On ? null : "蓝牙未开";
+        }
+        catch
+        {
+            Fault = "蓝牙未开";
+        }
+    }
 
     private void OnAdvertisementReceived(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementReceivedEventArgs args)
     {

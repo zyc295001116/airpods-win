@@ -39,4 +39,19 @@ public class AudioPolicyEngineTests
         Assert.True(decision.ShouldDisconnect);
         Assert.Equal(PolicyReason.ManualRelease, decision.Reason);
     }
+
+    [Fact]
+    public void Evaluate_SuppressAutoConnect_DoesNotConnectOnMediaPlay()
+    {
+        var engine = new AudioPolicyEngine();
+        engine.NotifyMediaPlayback(true);
+
+        var decision = engine.Evaluate(new AudioPolicySettings
+        {
+            AutoConnectOnMediaPlay = true,
+            SuppressAutoConnect = true
+        }, deviceConnected: false);
+
+        Assert.False(decision.ShouldConnect);
+    }
 }

@@ -1,33 +1,38 @@
-﻿using AirPodsWinTray.Core.Configuration;
-using AirPodsWinTray.Services;
+﻿using AirPodsWinTray.Services;
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
 
 namespace AirPodsWinTray;
 
-internal static class Program
+public static class Program
 {
     private const string MutexName = "AirPodsWinTray.SingleInstance";
 
     [STAThread]
-    private static int Main(string[] args)
+    private static void Main(string[] args)
     {
         if (args.Length > 0)
         {
-            return RunCli(args);
+            Environment.Exit(RunCli(args));
+            return;
         }
 
         using var mutex = new Mutex(true, MutexName, out var createdNew);
         if (!createdNew)
         {
-            return 0;
+            return;
         }
 
-        ApplicationConfiguration.Initialize();
-        var config = AppConfig.Load();
-        Application.Run(new TrayApplicationContext(config));
-        return 0;
+        WinRT.ComWrappersSupport.InitializeComWrappers();
+        Application.Start(p =>
+        {
+            var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
+            SynchronizationContext.SetSynchronizationContext(context);
+            new App();
+        });
     }
 
-  private static int RunCli(string[] args)
+    private static int RunCli(string[] args)
     {
         var command = args[0].ToLowerInvariant();
         var bt = new BtAudioService();

@@ -30,6 +30,74 @@ public sealed class BtAudioService
         }
     }
 
+    public IReadOnlyList<BtAudioDevice> ListAirPods()
+    {
+        lock (_gate)
+        {
+            DiscoverUnlocked();
+            return _known.Values
+                .Where(group => group.KsDeviceIds.Count > 0
+                    && group.Name.Contains("AirPods", StringComparison.OrdinalIgnoreCase))
+                .Select(ToDevice)
+                .OrderBy(device => device.ContainerName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
+
+    public BtAudioDevice? FindById(Guid containerId)
+    {
+        lock (_gate)
+        {
+            if (!_known.TryGetValue(containerId, out var group))
+            {
+                return null;
+            }
+
+            RefreshGroupStateUnlocked(group);
+            return ToDevice(group);
+        }
+    }
+
+    public string? FindStereoPlaybackEndpoint(Guid containerId)
+    {
+        lock (_gate)
+        {
+            if (!_known.TryGetValue(containerId, out var group))
+            {
+                return null;
+            }
+
+            var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+            string? fallback = null;
+            foreach (var endpointId in group.EndpointIds)
+            {
+                if (!TryGetDevice(enumerator, endpointId, out var device, out _)
+                    || device.OpenPropertyStore(0, out var store) < 0
+                    || store is null)
+                {
+                    continue;
+                }
+
+                var name = GetStringProperty(store, PropertyKeys.PKEY_Device_FriendlyName);
+                if (name.Contains("Hands-Free", StringComparison.OrdinalIgnoreCase)
+                    || name.Contains("Microphone", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (name.Contains("Stereo", StringComparison.OrdinalIgnoreCase)
+                    || name.Contains("Headphone", StringComparison.OrdinalIgnoreCase))
+                {
+                    return endpointId;
+                }
+
+                fallback ??= endpointId;
+            }
+
+            return fallback;
+        }
+    }
+
     public IReadOnlyList<BtAudioDevice> ListDevices()
     {
         lock (_gate)
@@ -274,11 +342,20 @@ public sealed class BtAudioService
             _known[id].IsConnected = isActive;
         }
 
-        foreach (var (id, group) in _known)
+        foreach (var (id, group) in _known.ToList())
         {
-            if (!seen.Contains(id))
+            if (seen.Contains(id))
+            {
+                continue;
+            }
+
+            if (EndpointAlive(group))
             {
                 RefreshGroupStateUnlocked(group);
+            }
+            else
+            {
+                _known.Remove(id);
             }
         }
 
@@ -322,6 +399,25 @@ public sealed class BtAudioService
         {
             group.IsConnected = anyActive;
         }
+    }
+
+    private static bool EndpointAlive(KnownGroup group)
+    {
+        if (group.EndpointIds.Count == 0)
+        {
+            return false;
+        }
+
+        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+        foreach (var endpointId in group.EndpointIds)
+        {
+            if (TryGetDevice(enumerator, endpointId, out _, out _))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private bool TryFindUnlocked(string nameContains, out KnownGroup group)
